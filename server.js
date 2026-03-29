@@ -8,9 +8,7 @@ const Quiz = require('./Model/QuizSchema');
 
 const app = express();
 
-// --- Middleware Configuration ---
 app.use(cors());
-// 50mb limit for large quiz files
 app.use(express.json({ limit: '50mb' })); 
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -22,23 +20,17 @@ const upload = multer({
 const mongoURI = process.env.MONGO_URI;
 
 if (!mongoURI) {
-  console.error("❌ Error: MONGO_URI is not defined in .env file");
+  console.error("❌ Error: MONGO_URI is not defined");
   process.exit(1);
 }
 
-// --- MongoDB Connection with Indexing Options ---
 mongoose.connect(mongoURI)
-  .then(() => {
-    console.log("✅ MongoDB Connected!");
-    // Forcefully create index to prevent memory sort issues (FREE solution)
-    Quiz.createIndexes({ createdAt: -1 }).catch(err => console.log("Index Error:", err));
-  })
+  .then(() => console.log("✅ MongoDB Connected!"))
   .catch(err => console.log("❌ Connection Error:", err));
-
 
 /**
  * @route   POST /api/quizzes/admin-fetch
- * @desc    Verify admin credentials and return all quiz data (Fixed Sort Error)
+ * @desc    Manual Sort to bypass MongoDB 32MB Memory Limit
  */
 app.post('/api/quizzes/admin-fetch', async (req, res) => {
   const { email, password } = req.body;
@@ -47,20 +39,21 @@ app.post('/api/quizzes/admin-fetch', async (req, res) => {
     const adminEmail = process.env.ADMIN_EMAIL;
     const adminPassword = process.env.ADMIN_PASSWORD;
 
-    // Use double equals for safety as per your original code
     if (email == adminEmail && password == adminPassword) {
       
-      /** * SOLUTION FOR 32MB LIMIT: 
-       * .allowDiskUse(true) allows MongoDB to use temporary files for sorting
-       * if the result exceeds the 32MB RAM limit.
-       */
-      const allQuizzes = await Quiz.find({})
-        .sort({ createdAt: -1 })
-        .allowDiskUse(true); // <--- This fixes the 33554432 bytes error
+      // STEP 1: बिना सॉर्ट किए डेटा निकालें (इससे 32MB वाली एरर नहीं आएगी)
+      // .lean() का इस्तेमाल करें ताकि डेटा हल्का (Plain JS Object) रहे
+      const allQuizzes = await Quiz.find({}).lean();
+
+      // STEP 2: JavaScript के जरिए मैन्युअली सॉर्ट करें (Server-side Sorting)
+      // यह MongoDB की मेमोरी लिमिट को पूरी तरह बायपास कर देगा
+      allQuizzes.sort((a, b) => {
+        return new Date(b.createdAt) - new Date(a.createdAt);
+      });
       
       return res.status(200).json({
         success: true,
-        message: "Authentication successful",
+        message: "Authentication successful (Manual Sort Enabled)",
         count: allQuizzes.length,
         data: allQuizzes
       });
@@ -83,7 +76,6 @@ app.post('/api/quizzes/admin-fetch', async (req, res) => {
 
 /**
  * @route   POST /api/quizzes/upload-raw
- * @desc    Save raw .txt content to DB
  */
 app.post('/api/quizzes/upload-raw', upload.single('quizFile'), async (req, res) => {
   try {
@@ -113,12 +105,11 @@ app.post('/api/quizzes/upload-raw', upload.single('quizFile'), async (req, res) 
   }
 });
 
-// Root Route
 app.get('/', (req, res) => {
-  res.send("Backend Server is Running Successfully with Disk Sorting Enabled!");
+  res.send("Backend Server is Running (Manual Sort Mode)");
 });
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
