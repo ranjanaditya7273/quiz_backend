@@ -9,6 +9,7 @@ const Quiz = require('./Model/QuizSchema');
 const app = express();
 
 app.use(cors());
+app.use(cors({ origin: 'http://localhost:3000' }))
 app.use(express.json({ limit: '50mb' })); 
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
